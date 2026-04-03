@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D CT 褰卞儚鏌ョ湅鍣?/title>
+    <style>
+        :root {
+            --bg-primary: #0d1117;
+            --bg-secondary: #161b22;
+            --bg-tertiary: #21262d;
+            --border-color: #30363d;
+            --text-primary: #c9d1d9;
+            --text-secondary: #8b949e;
+            --accent: #58a6ff;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            overflow: hidden;
+        }
+        .header {
+            height: 50px;
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            align-items: center;
+            padding: 0 20px;
+            gap: 20px;
+        }
+        .header h1 { font-size: 18px; font-weight: 600; }
+        .main-container {
+            height: calc(100vh - 50px);
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            grid-template-rows: 1fr 1fr;
+            gap: 4px;
+            padding: 4px;
+        }
+        .view-panel {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            overflow: hidden;
+            position: relative;
+            display: flex;
+            flex-direction: column;
+        }
+        .view-header {
+            height: 32px;
+            background: var(--bg-tertiary);
+            padding: 0 12px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            font-size: 13px;
+            font-weight: 500;
+        }
+        .view-content {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+        }
+        .drop-zone {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            border: 2px dashed var(--border-color);
+            margin: 8px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .drop-zone:hover, .drop-zone.active {
+            border-color: var(--accent);
+            background: rgba(88, 166, 255, 0.1);
+        }
+        .drop-zone-icon { font-size: 48px; margin-bottom: 16px; }
+        .drop-zone-text { font-size: 16px; color: var(--text-secondary); }
+        .drop-zone-hint { font-size: 13px; color: var(--text-secondary); margin-top: 8px; }
+        .btn {
+            padding: 6px 14px;
+            border-radius: 6px;
+            border: 1px solid var(--border-color);
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
+            font-size: 13px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .btn:hover { background: var(--bg-secondary); border-color: var(--accent); }
+        .preset-btn { padding: 4px 10px; font-size: 12px; background: transparent; }
+        .preset-btn:hover { border-color: var(--accent); color: var(--accent); }
+        .toolbar { display: flex; gap: 8px; align-items: center; }
+        .toolbar-group { display: flex; gap: 4px; padding: 0 8px; border-right: 1px solid var(--border-color); }
+        .input-label { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-secondary); }
+        .input-label input {
+            width: 60px;
+            padding: 4px 8px;
+            background: var(--bg-primary);
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            color: var(--text-primary);
+            font-size: 12px;
+        }
+        canvas { max-width: 100%; max-height: 100%; }
+        .patient-info {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: 12px;
+            z-index: 10;
+            text-align: right;
+        }
+        .loading {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 16px;
+        }
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 3px solid var(--border-color);
+            border-top-color: var(--accent);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .layer-indicator {
+            position: absolute;
+            bottom: 8px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.7);
+            padding: 4px 12px;
+            border-radius: 4px;
+            font-size: 12px;
+        }
+        .anatomical-marker {
+            position: absolute;
+            font-size: 10px;
+            color: rgba(255, 255, 255, 0.6);
+            font-weight: bold;
+        }
+        .marker-A { top: 4px; right: 8px; }
+        .marker-P { bottom: 4px; right: 8px; }
+        .marker-L { left: 8px; top: 50%; transform: translateY(-50%); }
+        .marker-R { right: 8px; top: 50%; transform: translateY(-50%); }
+    </style>
+</head>
+<body>
+    <header class="header">
+        <h1>馃彞 3D CT 褰卞儚鏌ョ湅鍣?/h1>
+        <div class="toolbar">
+            <div class="toolbar-group">
+                <button class="btn preset-btn" onclick="applyPreset('lung')">鑲虹獥</button>
+                <button class="btn preset-btn" onclick="applyPreset('bone')">楠ㄧ獥</button>
+                <button class="btn preset-btn" onclick="applyPreset('brain')">鑴戠獥</button>
+                <button class="btn preset-btn" onclick="applyPreset('abdomen')">鑵圭獥</button>
+            </div>
+            <div class="toolbar-group">
+                <label class="input-label">
+                    绐楀: <input type="number" id="windowWidth" value="400" onchange="updateWindow()">
+                </label>
+                <label class="input-label">
+                    绐椾綅: <input type="number" id="windowCenter" value="40" onchange="updateWindow()">
+                </label>
+            </div>
+        </div>
+    </header>
+
+    <main class="main-container">
+        <div class="view-panel">
+            <div class="view-header">
+                <span>杞翠綅 (Axial)</span>
+                <span id="axial-slice-info">灞? 0/0</span>
+            </div>
+            <div class="view-content" id="axial-container">
+                <div class="drop-zone" id="drop-zone">
+                    <div class="drop-zone-icon">馃搧</div>
+                    <div class="drop-zone-text">鐐瑰嚮閫夋嫨鎴栨嫋鏀?DICOM 鏂囦欢澶?/div>
+                    <div class="drop-zone-hint">鏀寔 .dcm 鏂囦欢鎴栧寘鍚?DICOM 鐨勬枃浠跺す</div>
+                    <input type="file" id="file-input" webkitdirectory multiple style="display:none">
+                </div>
+                <canvas id="axial-canvas" style="display:none"></canvas>
+                <span class="anatomical-marker marker-A">A</span>
+                <span class="anatomical-marker marker-P">P</span>
+                <span class="anatomical-marker marker-L">L</span>
+                <span class="anatomical-marker marker-R">R</span>
+            </div>
+        </div>
+
+        <div class="view-panel">
+            <div class="view-header">
+                <span>鍐犵姸浣?(Coronal)</span>
+                <span id="coronal-slice-info">灞? 0/0</span>
+            </div>
+            <div class="view-content">
+                <canvas id="coronal-canvas" style="display:none"></canvas>
+                <span class="anatomical-marker marker-A">A</span>
+                <span class="anatomical-marker marker-P">P</span>
+                <span class="anatomical-marker marker-L">L</span>
+                <span class="anatomical-marker marker-R">R</span>
+            </div>
+        </div>
+
+        <div class="view-panel">
+            <div class="view-header">
+                <span>鐭㈢姸浣?(Sagittal)</span>
+                <span id="sagittal-slice-info">灞? 0/0</span>
+            </div>
+            <div class="view-content">
+                <canvas id="sagittal-canvas" style="display:none"></canvas>
+                <span class="anatomical-marker marker-A">A</span>
+                <span class="anatomical-marker marker-P">P</span>
+                <span class="anatomical-marker marker-L">L</span>
+                <span class="anatomical-marker marker-R">R</span>
+            </div>
+        </div>
+
+        <div class="view-panel">
+            <div class="view-header">
+                <span>3D 瑙嗗浘 (Volume)</span>
+            </div>
+            <div class="view-content">
+                <canvas id="volume-canvas" style="display:none"></canvas>
+                <div id="volume-hint" style="color: var(--text-secondary); text-align: center;">
+                    <p>瀹屾暣 3D 浣撴覆鏌撻渶瑕?WebGL</p>
+                    <p>褰撳墠鏄剧ず锛氫腑闂村垏鐗囬瑙?/p>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <div class="patient-info" id="patient-info" style="display:none">
+        <div>鎮ｈ€? <span id="patient-name">鏈煡</span></div>
+        <div>ID: <span id="patient-id">鏈煡</span></div>
+        <div>灏哄: <span id="dimensions">-</span></div>
+    </div>
+
+    <script src="https://unpkg.com/dicom-parser@1.8.21/dist/dicomParser.min.js"></script>
+    <script>
+        // 鍏ㄥ眬鐘舵€?        let dicomData = null;
+        let currentSlice = { axial: 0, coronal: 0, sagittal: 0 };
+        let windowSettings = { center: 40, width: 400 };
+
+        // 鏂囦欢閫夋嫨
+        const dropZone = document.getElementById('drop-zone');
+        const fileInput = document.getElementById('file-input');
+
+        dropZone.addEventListener('click', () => fileInput.click());
+        dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('active'); });
+        dropZone.addEventListener('dragleave', () => dropZone.classList.remove('active'));
+        dropZone.addEventListener('drop', e => {
+            e.preventDefault();
+            dropZone.classList.remove('active');
+            handleFiles(e.dataTransfer.files);
+        });
+        fileInput.addEventListener('change', e => handleFiles(e.target.files));
+
+        async function handleFiles(files) {
+            const dicomFiles = Array.from(files).filter(f => 
+                f.name.toLowerCase().endsWith('.dcm') || f.name.toLowerCase().endsWith('.dicom')
+            );
+
+            if (dicomFiles.length === 0) {
+                alert('鏈壘鍒?DICOM 鏂囦欢');
+                return;
+            }
+
+            try {
+                await loadDicomFiles(dicomFiles);
+            } catch (err) {
+                alert('鍔犺浇澶辫触: ' + err.message);
+            }
+        }
+
+        async function loadDicomFiles(files) {
+            const slices = [];
+
+            for (const file of files) {
+                try {
+                    const arrayBuffer = await file.arrayBuffer();
+                    const byteArray = new Uint8Array(arrayBuffer);
+                    const dataSet = dicomParser.parseDicom(byteArray);
+
+                    const pixelDataElement = dataSet.elements.x7fe00010;
+                    if (!pixelDataElement) continue;
+
+                    const width = dataSet.uint16('x00280011', 0) || 512;
+                    const height = dataSet.uint16('x00280010', 0) || 512;
+                    const bitsAllocated = dataSet.uint16('x00280100', 0) || 16;
+                    
+                    let pixelData;
+                    if (bitsAllocated === 16) {
+                        pixelData = new Int16Array(arrayBuffer, pixelDataElement.dataOffset, pixelDataElement.length / 2);
+                    } else {
+                        pixelData = new Uint8Array(arrayBuffer, pixelDataElement.dataOffset, pixelDataElement.length);
+                    }
+
+                    slices.push({
+                        pixelData,
+                        width,
+                        height,
+                        instanceNumber: parseFloat(dataSet.string('x00200013')) || slices.length,
+                        sliceLocation: parseFloat(dataSet.string('x00201032')) || slices.length
+                    });
+                } catch (e) {
+                    console.warn('璺宠繃鏂囦欢:', file.name, e);
+                }
+            }
+
+            if (slices.length === 0) throw new Error('鏈兘瑙ｆ瀽浠讳綍鏈夋晥鐨?DICOM 鏁版嵁');
+
+            // 鎺掑簭
+            slices.sort((a, b) => a.sliceLocation - b.sliceLocation);
+
+            // 鍚堝苟鏁版嵁
+            const first = slices[0];
+            const allPixels = new Int16Array(slices.length * first.width * first.height);
+            slices.forEach((s, i) => {
+                allPixels.set(s.pixelData, i * first.width * first.height);
+            });
+
+            dicomData = {
+                pixelData: allPixels,
+                width: first.width,
+                height: first.height,
+                numSlices: slices.length
+            };
+
+            currentSlice.axial = Math.floor(slices.length / 2);
+            currentSlice.coronal = Math.floor(first.height / 2);
+            currentSlice.sagittal = Math.floor(first.width / 2);
+
+            // 鏄剧ず鐢诲竷
+            document.getElementById('drop-zone').style.display = 'none';
+            document.getElementById('axial-canvas').style.display = 'block';
+            document.getElementById('coronal-canvas').style.display = 'block';
+            document.getElementById('sagittal-canvas').style.display = 'block';
+            document.getElementById('volume-canvas').style.display = 'block';
+            document.getElementById('volume-hint').style.display = 'none';
+            document.getElementById('patient-info').style.display = 'block';
+            document.getElementById('dimensions').textContent = 
+                `${first.width} 脳 ${first.height} 脳 ${slices.length}`;
+
+            renderAllViews();
+        }
+
+        function applyWindowing(pixelData, windowCenter, windowWidth) {
+            const result = new Uint8Array(pixelData.length);
+            const min = windowCenter - windowWidth / 2;
+            const max = windowCenter + windowWidth / 2;
+
+            for (let i = 0; i < pixelData.length; i++) {
+                const value = pixelData[i];
+                if (value <= min) result[i] = 0;
+                else if (value >= max) result[i] = 255;
+                else result[i] = Math.round(((value - min) / windowWidth) * 255);
+            }
+            return result;
+        }
+
+        function renderSlice(canvas, pixelData, width, height, sliceIndex, viewType) {
+            const ctx = canvas.getContext('2d');
+            canvas.width = width;
+            canvas.height = height;
+
+            let sliceData;
+            const sliceSize = width * height;
+
+            if (viewType === 'axial') {
+                sliceData = pixelData.slice(sliceIndex * sliceSize, (sliceIndex + 1) * sliceSize);
+            } else if (viewType === 'coronal') {
+                sliceData = new Int16Array(width * dicomData.numSlices);
+                const y = sliceIndex;
+                for (let z = 0; z < dicomData.numSlices; z++) {
+                    for (let x = 0; x < width; x++) {
+                        sliceData[z * width + x] = pixelData[z * sliceSize + y * width + x];
+                    }
+                }
+                canvas.height = dicomData.numSlices;
+            } else if (viewType === 'sagittal') {
+                sliceData = new Int16Array(height * dicomData.numSlices);
+                const x = sliceIndex;
+                for (let z = 0; z < dicomData.numSlices; z++) {
+                    for (let y = 0; y < height; y++) {
+                        sliceData[z * height + y] = pixelData[z * sliceSize + y * width + x];
+                    }
+                }
+                canvas.width = height;
+                canvas.height = dicomData.numSlices;
+            }
+
+            const grayscale = applyWindowing(sliceData, windowSettings.center, windowSettings.width);
+            const imageData = ctx.createImageData(canvas.width, canvas.height);
+            for (let i = 0; i < grayscale.length; i++) {
+                imageData.data[i * 4] = grayscale[i];
+                imageData.data[i * 4 + 1] = grayscale[i];
+                imageData.data[i * 4 + 2] = grayscale[i];
+                imageData.data[i * 4 + 3] = 255;
+            }
+            ctx.putImageData(imageData, 0, 0);
+        }
+
+        function renderAllViews() {
+            if (!dicomData) return;
+
+            renderSlice(
+                document.getElementById('axial-canvas'),
+                dicomData.pixelData, dicomData.width, dicomData.height,
+                currentSlice.axial, 'axial'
+            );
+            renderSlice(
+                document.getElementById('coronal-canvas'),
+                dicomData.pixelData, dicomData.width, dicomData.height,
+                currentSlice.coronal, 'coronal'
+            );
+            renderSlice(
+                document.getElementById('sagittal-canvas'),
+                dicomData.pixelData, dicomData.width, dicomData.height,
+                currentSlice.sagittal, 'sagittal'
+            );
+
+            // 鏇存柊淇℃伅
+            document.getElementById('axial-slice-info').textContent = 
+                `灞? ${currentSlice.axial + 1}/${dicomData.numSlices}`;
+            document.getElementById('coronal-slice-info').textContent = 
+                `灞? ${currentSlice.coronal + 1}/${dicomData.height}`;
+            document.getElementById('sagittal-slice-info').textContent = 
+                `灞? ${currentSlice.sagittal + 1}/${dicomData.width}`;
+        }
+
+        function applyPreset(preset) {
+            const presets = {
+                lung: { center: -600, width: 1500 },
+                bone: { center: 300, width: 1500 },
+                brain: { center: 40, width: 80 },
+                abdomen: { center: 60, width: 400 }
+            };
+            const p = presets[preset];
+            windowSettings.center = p.center;
+            windowSettings.width = p.width;
+            document.getElementById('windowCenter').value = p.center;
+            document.getElementById('windowWidth').value = p.width;
+            renderAllViews();
+        }
+
+        function updateWindow() {
+            windowSettings.center = parseInt(document.getElementById('windowCenter').value) || 40;
+            windowSettings.width = parseInt(document.getElementById('windowWidth').value) || 400;
+            renderAllViews();
+        }
+
+        // 婊氳疆缈诲眰
+        document.querySelectorAll('.view-content').forEach((container, index) => {
+            const views = ['axial', 'coronal', 'sagittal'];
+            if (index >= 3) return;
+
+            container.addEventListener('wheel', e => {
+                if (!dicomData) return;
+                e.preventDefault();
+                const delta = e.deltaY > 0 ? -1 : 1;
+                const max = index === 0 ? dicomData.numSlices : 
+                           index === 1 ? dicomData.height : dicomData.width;
+                currentSlice[views[index]] = Math.max(0, 
+                    Math.min(currentSlice[views[index]] + delta, max - 1));
+                renderAllViews();
+            });
+        });
+    </script>
+</body>
+</html>
