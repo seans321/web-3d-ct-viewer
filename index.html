@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>3D CT 影像查看器</title>
+    <title>3D CT Viewer</title>
     <style>
         :root {
             --bg-primary: #0d1117;
@@ -122,31 +122,6 @@
             z-index: 10;
             text-align: right;
         }
-        .loading {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            gap: 16px;
-        }
-        .spinner {
-            width: 40px;
-            height: 40px;
-            border: 3px solid var(--border-color);
-            border-top-color: var(--accent);
-            border-radius: 50%;
-            animation: spin 1s linear infinite;
-        }
-        @keyframes spin { to { transform: rotate(360deg); } }
-        .layer-indicator {
-            position: absolute;
-            bottom: 8px;
-            left: 50%;
-            transform: translateX(-50%);
-            background: rgba(0, 0, 0, 0.7);
-            padding: 4px 12px;
-            border-radius: 4px;
-            font-size: 12px;
-        }
         .anatomical-marker {
             position: absolute;
             font-size: 10px;
@@ -161,20 +136,20 @@
 </head>
 <body>
     <header class="header">
-        <h1>🏥 3D CT 影像查看器</h1>
+        <h1>3D CT Viewer</h1>
         <div class="toolbar">
             <div class="toolbar-group">
-                <button class="btn preset-btn" onclick="applyPreset('lung')">肺窗</button>
-                <button class="btn preset-btn" onclick="applyPreset('bone')">骨窗</button>
-                <button class="btn preset-btn" onclick="applyPreset('brain')">脑窗</button>
-                <button class="btn preset-btn" onclick="applyPreset('abdomen')">腹窗</button>
+                <button class="btn preset-btn" onclick="applyPreset('lung')">Lung</button>
+                <button class="btn preset-btn" onclick="applyPreset('bone')">Bone</button>
+                <button class="btn preset-btn" onclick="applyPreset('brain')">Brain</button>
+                <button class="btn preset-btn" onclick="applyPreset('abdomen')">Abdomen</button>
             </div>
             <div class="toolbar-group">
                 <label class="input-label">
-                    窗宽: <input type="number" id="windowWidth" value="400" onchange="updateWindow()">
+                    WW: <input type="number" id="windowWidth" value="400" onchange="updateWindow()">
                 </label>
                 <label class="input-label">
-                    窗位: <input type="number" id="windowCenter" value="40" onchange="updateWindow()">
+                    WC: <input type="number" id="windowCenter" value="40" onchange="updateWindow()">
                 </label>
             </div>
         </div>
@@ -183,14 +158,14 @@
     <main class="main-container">
         <div class="view-panel">
             <div class="view-header">
-                <span>轴位 (Axial)</span>
-                <span id="axial-slice-info">层: 0/0</span>
+                <span>Axial</span>
+                <span id="axial-slice-info">Slice: 0/0</span>
             </div>
             <div class="view-content" id="axial-container">
                 <div class="drop-zone" id="drop-zone">
-                    <div class="drop-zone-icon">📁</div>
-                    <div class="drop-zone-text">点击选择或拖放 DICOM 文件夹</div>
-                    <div class="drop-zone-hint">支持 .dcm 文件或包含 DICOM 的文件夹</div>
+                    <div class="drop-zone-icon">馃搧</div>
+                    <div class="drop-zone-text">Click or drag DICOM folder</div>
+                    <div class="drop-zone-hint">Supports .dcm files</div>
                     <input type="file" id="file-input" webkitdirectory multiple style="display:none">
                 </div>
                 <canvas id="axial-canvas" style="display:none"></canvas>
@@ -203,8 +178,8 @@
 
         <div class="view-panel">
             <div class="view-header">
-                <span>冠状位 (Coronal)</span>
-                <span id="coronal-slice-info">层: 0/0</span>
+                <span>Coronal</span>
+                <span id="coronal-slice-info">Slice: 0/0</span>
             </div>
             <div class="view-content">
                 <canvas id="coronal-canvas" style="display:none"></canvas>
@@ -217,8 +192,8 @@
 
         <div class="view-panel">
             <div class="view-header">
-                <span>矢状位 (Sagittal)</span>
-                <span id="sagittal-slice-info">层: 0/0</span>
+                <span>Sagittal</span>
+                <span id="sagittal-slice-info">Slice: 0/0</span>
             </div>
             <div class="view-content">
                 <canvas id="sagittal-canvas" style="display:none"></canvas>
@@ -231,32 +206,30 @@
 
         <div class="view-panel">
             <div class="view-header">
-                <span>3D 视图 (Volume)</span>
+                <span>3D View</span>
             </div>
             <div class="view-content">
                 <canvas id="volume-canvas" style="display:none"></canvas>
                 <div id="volume-hint" style="color: var(--text-secondary); text-align: center;">
-                    <p>完整 3D 体渲染需要 WebGL</p>
-                    <p>当前显示：中间切片预览</p>
+                    <p>3D Volume Rendering</p>
+                    <p>Shows middle slice preview</p>
                 </div>
             </div>
         </div>
     </main>
 
     <div class="patient-info" id="patient-info" style="display:none">
-        <div>患者: <span id="patient-name">未知</span></div>
-        <div>ID: <span id="patient-id">未知</span></div>
-        <div>尺寸: <span id="dimensions">-</span></div>
+        <div>Patient: <span id="patient-name">Unknown</span></div>
+        <div>ID: <span id="patient-id">Unknown</span></div>
+        <div>Size: <span id="dimensions">-</span></div>
     </div>
 
     <script src="https://unpkg.com/dicom-parser@1.8.21/dist/dicomParser.min.js"></script>
     <script>
-        // 全局状态
         let dicomData = null;
         let currentSlice = { axial: 0, coronal: 0, sagittal: 0 };
         let windowSettings = { center: 40, width: 400 };
 
-        // 文件选择
         const dropZone = document.getElementById('drop-zone');
         const fileInput = document.getElementById('file-input');
 
@@ -276,14 +249,14 @@
             );
 
             if (dicomFiles.length === 0) {
-                alert('未找到 DICOM 文件');
+                alert('No DICOM files found');
                 return;
             }
 
             try {
                 await loadDicomFiles(dicomFiles);
             } catch (err) {
-                alert('加载失败: ' + err.message);
+                alert('Load failed: ' + err.message);
             }
         }
 
@@ -318,16 +291,14 @@
                         sliceLocation: parseFloat(dataSet.string('x00201032')) || slices.length
                     });
                 } catch (e) {
-                    console.warn('跳过文件:', file.name, e);
+                    console.warn('Skip file:', file.name, e);
                 }
             }
 
-            if (slices.length === 0) throw new Error('未能解析任何有效的 DICOM 数据');
+            if (slices.length === 0) throw new Error('No valid DICOM data');
 
-            // 排序
             slices.sort((a, b) => a.sliceLocation - b.sliceLocation);
 
-            // 合并数据
             const first = slices[0];
             const allPixels = new Int16Array(slices.length * first.width * first.height);
             slices.forEach((s, i) => {
@@ -345,7 +316,6 @@
             currentSlice.coronal = Math.floor(first.height / 2);
             currentSlice.sagittal = Math.floor(first.width / 2);
 
-            // 显示画布
             document.getElementById('drop-zone').style.display = 'none';
             document.getElementById('axial-canvas').style.display = 'block';
             document.getElementById('coronal-canvas').style.display = 'block';
@@ -354,7 +324,7 @@
             document.getElementById('volume-hint').style.display = 'none';
             document.getElementById('patient-info').style.display = 'block';
             document.getElementById('dimensions').textContent = 
-                `${first.width} × ${first.height} × ${slices.length}`;
+                `${first.width} x ${first.height} x ${slices.length}`;
 
             renderAllViews();
         }
@@ -434,13 +404,12 @@
                 currentSlice.sagittal, 'sagittal'
             );
 
-            // 更新信息
             document.getElementById('axial-slice-info').textContent = 
-                `层: ${currentSlice.axial + 1}/${dicomData.numSlices}`;
+                `Slice: ${currentSlice.axial + 1}/${dicomData.numSlices}`;
             document.getElementById('coronal-slice-info').textContent = 
-                `层: ${currentSlice.coronal + 1}/${dicomData.height}`;
+                `Slice: ${currentSlice.coronal + 1}/${dicomData.height}`;
             document.getElementById('sagittal-slice-info').textContent = 
-                `层: ${currentSlice.sagittal + 1}/${dicomData.width}`;
+                `Slice: ${currentSlice.sagittal + 1}/${dicomData.width}`;
         }
 
         function applyPreset(preset) {
@@ -464,7 +433,6 @@
             renderAllViews();
         }
 
-        // 滚轮翻层
         document.querySelectorAll('.view-content').forEach((container, index) => {
             const views = ['axial', 'coronal', 'sagittal'];
             if (index >= 3) return;
