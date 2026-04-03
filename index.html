@@ -64,6 +64,7 @@
             align-items: center;
             justify-content: center;
             position: relative;
+            background: #000;
         }
         .drop-zone {
             width: 100%;
@@ -93,11 +94,9 @@
             color: var(--text-primary);
             font-size: 13px;
             cursor: pointer;
-            transition: all 0.2s;
         }
-        .btn:hover { background: var(--bg-secondary); border-color: var(--accent); }
+        .btn:hover { border-color: var(--accent); }
         .preset-btn { padding: 4px 10px; font-size: 12px; background: transparent; }
-        .preset-btn:hover { border-color: var(--accent); color: var(--accent); }
         .toolbar { display: flex; gap: 8px; align-items: center; }
         .toolbar-group { display: flex; gap: 4px; padding: 0 8px; border-right: 1px solid var(--border-color); }
         .input-label { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-secondary); }
@@ -120,7 +119,6 @@
             border-radius: 6px;
             font-size: 12px;
             z-index: 10;
-            text-align: right;
         }
         .anatomical-marker {
             position: absolute;
@@ -164,8 +162,8 @@
             <div class="view-content" id="axial-container">
                 <div class="drop-zone" id="drop-zone">
                     <div class="drop-zone-icon">[+]</div>
-                    <div class="drop-zone-text">Click or drag DICOM folder</div>
-                    <div class="drop-zone-hint">Supports .dcm files</div>
+                    <div class="drop-zone-text">Click or drag DICOM/raw CT folder</div>
+                    <div class="drop-zone-hint">Supports .dcm files and raw 16-bit data</div>
                     <input type="file" id="file-input" webkitdirectory multiple style="display:none">
                 </div>
                 <canvas id="axial-canvas" style="display:none"></canvas>
@@ -220,63 +218,86 @@
 
     <div class="patient-info" id="patient-info" style="display:none">
         <div>Patient: <span id="patient-name">Unknown</span></div>
-        <div>ID: <span id="patient-id">Unknown</span></div>
         <div>Size: <span id="dimensions">-</span></div>
+        <div>Format: <span id="data-format">-</span></div>
     </div>
 
     <script src="https://unpkg.com/dicom-parser@1.8.21/dist/dicomParser.min.js"></script>
     <script>
-        let dicomData = null;
-        let currentSlice = { axial: 0, coronal: 0, sagittal: 0 };
-        let windowSettings = { center: 40, width: 400 };
+        var dicomData = null;
+        var currentSlice = { axial: 0, coronal: 0, sagittal: 0 };
+        var windowSettings = { center: 40, width: 400 };
 
-        const dropZone = document.getElementById('drop-zone');
-        const fileInput = document.getElementById('file-input');
+        var dropZone = document.getElementById('drop-zone');
+        var fileInput = document.getElementById('file-input');
 
-        dropZone.addEventListener('click', () => fileInput.click());
-        dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('active'); });
-        dropZone.addEventListener('dragleave', () => dropZone.classList.remove('active'));
-        dropZone.addEventListener('drop', e => {
+        dropZone.addEventListener('click', function() { fileInput.click(); });
+        dropZone.addEventListener('dragover', function(e) { e.preventDefault(); dropZone.classList.add('active'); });
+        dropZone.addEventListener('dragleave', function() { dropZone.classList.remove('active'); });
+        dropZone.addEventListener('drop', function(e) {
             e.preventDefault();
             dropZone.classList.remove('active');
             handleFiles(e.dataTransfer.files);
         });
-        fileInput.addEventListener('change', e => handleFiles(e.target.files));
+        fileInput.addEventListener('change', function(e) { handleFiles(e.target.files); });
 
         async function handleFiles(files) {
-            const dicomFiles = Array.from(files).filter(f => 
-                f.name.toLowerCase().endsWith('.dcm') || f.name.toLowerCase().endsWith('.dicom')
-            );
+            var fileList = Array.from(files);
+            
+            // Try to detect file type
+            var dcmFiles = fileList.filter(function(f) { 
+                return f.name.toLowerCase().endsWith('.dcm') || f.name.toLowerCase().endsWith('.dicom');
+            });
+            
+            // If no .dcm files, try all files as raw data
+            if (dcmFiles.length === 0) {
+                dcmFiles = fileList;
+            }
 
-            if (dicomFiles.length === 0) {
-                alert('No DICOM files found');
+            if (dcmFiles.length === 0) {
+                alert('No files found');
                 return;
             }
 
             try {
-                await loadDicomFiles(dicomFiles);
+                // First try as DICOM
+                var firstFile = dcmFiles[0];
+                var arrayBuffer = await firstFile.arrayBuffer();
+                var bytes = new Uint8Array(arrayBuffer);
+                
+                // Check for DICM header at position 128
+                var isDicom = bytes.length > 131 && 
+                              bytes[128] === 68 && bytes[129] === 73 && 
+                              bytes[130] === 67 && bytes[131] === 77;
+                
+                if (isDicom) {
+                    await loadDicomFiles(dcmFiles);
+                } else {
+                    await loadRawFiles(dcmFiles);
+                }
             } catch (err) {
                 alert('Load failed: ' + err.message);
             }
         }
 
         async function loadDicomFiles(files) {
-            const slices = [];
+            var slices = [];
 
-            for (const file of files) {
+            for (var i = 0; i < files.length; i++) {
                 try {
-                    const arrayBuffer = await file.arrayBuffer();
-                    const byteArray = new Uint8Array(arrayBuffer);
-                    const dataSet = dicomParser.parseDicom(byteArray);
+                    var file = files[i];
+                    var arrayBuffer = await file.arrayBuffer();
+                    var byteArray = new Uint8Array(arrayBuffer);
+                    var dataSet = dicomParser.parseDicom(byteArray);
 
-                    const pixelDataElement = dataSet.elements.x7fe00010;
+                    var pixelDataElement = dataSet.elements.x7fe00010;
                     if (!pixelDataElement) continue;
 
-                    const width = dataSet.uint16('x00280011', 0) || 512;
-                    const height = dataSet.uint16('x00280010', 0) || 512;
-                    const bitsAllocated = dataSet.uint16('x00280100', 0) || 16;
+                    var width = dataSet.uint16('x00280011', 0) || 512;
+                    var height = dataSet.uint16('x00280010', 0) || 512;
+                    var bitsAllocated = dataSet.uint16('x00280100', 0) || 16;
                     
-                    let pixelData;
+                    var pixelData;
                     if (bitsAllocated === 16) {
                         pixelData = new Int16Array(arrayBuffer, pixelDataElement.dataOffset, pixelDataElement.length / 2);
                     } else {
@@ -284,9 +305,9 @@
                     }
 
                     slices.push({
-                        pixelData,
-                        width,
-                        height,
+                        pixelData: pixelData,
+                        width: width,
+                        height: height,
                         instanceNumber: parseFloat(dataSet.string('x00200013')) || slices.length,
                         sliceLocation: parseFloat(dataSet.string('x00201032')) || slices.length
                     });
@@ -297,11 +318,11 @@
 
             if (slices.length === 0) throw new Error('No valid DICOM data');
 
-            slices.sort((a, b) => a.sliceLocation - b.sliceLocation);
+            slices.sort(function(a, b) { return a.sliceLocation - b.sliceLocation; });
 
-            const first = slices[0];
-            const allPixels = new Int16Array(slices.length * first.width * first.height);
-            slices.forEach((s, i) => {
+            var first = slices[0];
+            var allPixels = new Int16Array(slices.length * first.width * first.height);
+            slices.forEach(function(s, i) {
                 allPixels.set(s.pixelData, i * first.width * first.height);
             });
 
@@ -316,6 +337,69 @@
             currentSlice.coronal = Math.floor(first.height / 2);
             currentSlice.sagittal = Math.floor(first.width / 2);
 
+            showViewer('DICOM');
+        }
+
+        async function loadRawFiles(files) {
+            // Sort files by name (numeric sort)
+            files.sort(function(a, b) {
+                var numA = parseInt(a.name.match(/\d+/) || [0]);
+                var numB = parseInt(b.name.match(/\d+/) || [0]);
+                return numA - numB;
+            });
+
+            // Load first file to determine dimensions
+            var firstFile = files[0];
+            var firstBuffer = await firstFile.arrayBuffer();
+            var fileSize = firstBuffer.byteLength;
+            
+            // Detect dimensions: assume 16-bit grayscale
+            // 131072 bytes = 256x256x2 (most common)
+            var width, height;
+            if (fileSize === 131072) {
+                width = 256;
+                height = 256;
+            } else if (fileSize === 262144) {
+                width = 512;
+                height = 256;
+            } else if (fileSize === 524288) {
+                width = 512;
+                height = 512;
+            } else {
+                // Try to guess square dimensions
+                var pixels = fileSize / 2;
+                var sqrt = Math.sqrt(pixels);
+                width = Math.round(sqrt);
+                height = Math.round(sqrt);
+            }
+
+            var slices = [];
+            for (var i = 0; i < files.length; i++) {
+                var buffer = await files[i].arrayBuffer();
+                var pixelData = new Int16Array(buffer);
+                slices.push(pixelData);
+            }
+
+            var allPixels = new Int16Array(slices.length * width * height);
+            slices.forEach(function(s, i) {
+                allPixels.set(s, i * width * height);
+            });
+
+            dicomData = {
+                pixelData: allPixels,
+                width: width,
+                height: height,
+                numSlices: slices.length
+            };
+
+            currentSlice.axial = Math.floor(slices.length / 2);
+            currentSlice.coronal = Math.floor(height / 2);
+            currentSlice.sagittal = Math.floor(width / 2);
+
+            showViewer('Raw 16-bit');
+        }
+
+        function showViewer(format) {
             document.getElementById('drop-zone').style.display = 'none';
             document.getElementById('axial-canvas').style.display = 'block';
             document.getElementById('coronal-canvas').style.display = 'block';
@@ -324,18 +408,19 @@
             document.getElementById('volume-hint').style.display = 'none';
             document.getElementById('patient-info').style.display = 'block';
             document.getElementById('dimensions').textContent = 
-                first.width + ' x ' + first.height + ' x ' + slices.length;
+                dicomData.width + ' x ' + dicomData.height + ' x ' + dicomData.numSlices;
+            document.getElementById('data-format').textContent = format;
 
             renderAllViews();
         }
 
         function applyWindowing(pixelData, windowCenter, windowWidth) {
-            const result = new Uint8Array(pixelData.length);
-            const min = windowCenter - windowWidth / 2;
-            const max = windowCenter + windowWidth / 2;
+            var result = new Uint8Array(pixelData.length);
+            var min = windowCenter - windowWidth / 2;
+            var max = windowCenter + windowWidth / 2;
 
-            for (let i = 0; i < pixelData.length; i++) {
-                const value = pixelData[i];
+            for (var i = 0; i < pixelData.length; i++) {
+                var value = pixelData[i];
                 if (value <= min) result[i] = 0;
                 else if (value >= max) result[i] = 255;
                 else result[i] = Math.round(((value - min) / windowWidth) * 255);
@@ -344,39 +429,46 @@
         }
 
         function renderSlice(canvas, pixelData, width, height, sliceIndex, viewType) {
-            const ctx = canvas.getContext('2d');
-            canvas.width = width;
-            canvas.height = height;
-
-            let sliceData;
-            const sliceSize = width * height;
+            var ctx = canvas.getContext('2d');
+            var sliceData;
+            var sliceSize = width * height;
+            var canvasWidth, canvasHeight;
 
             if (viewType === 'axial') {
-                sliceData = pixelData.slice(sliceIndex * sliceSize, (sliceIndex + 1) * sliceSize);
+                canvasWidth = width;
+                canvasHeight = height;
+                sliceData = new Int16Array(sliceSize);
+                for (var i = 0; i < sliceSize; i++) {
+                    sliceData[i] = pixelData[sliceIndex * sliceSize + i];
+                }
             } else if (viewType === 'coronal') {
-                sliceData = new Int16Array(width * dicomData.numSlices);
-                const y = sliceIndex;
-                for (let z = 0; z < dicomData.numSlices; z++) {
-                    for (let x = 0; x < width; x++) {
+                canvasWidth = width;
+                canvasHeight = dicomData.numSlices;
+                sliceData = new Int16Array(canvasWidth * canvasHeight);
+                var y = sliceIndex;
+                for (var z = 0; z < dicomData.numSlices; z++) {
+                    for (var x = 0; x < width; x++) {
                         sliceData[z * width + x] = pixelData[z * sliceSize + y * width + x];
                     }
                 }
-                canvas.height = dicomData.numSlices;
             } else if (viewType === 'sagittal') {
-                sliceData = new Int16Array(height * dicomData.numSlices);
-                const x = sliceIndex;
-                for (let z = 0; z < dicomData.numSlices; z++) {
-                    for (let y = 0; y < height; y++) {
+                canvasWidth = height;
+                canvasHeight = dicomData.numSlices;
+                sliceData = new Int16Array(canvasWidth * canvasHeight);
+                var x = sliceIndex;
+                for (var z = 0; z < dicomData.numSlices; z++) {
+                    for (var y = 0; y < height; y++) {
                         sliceData[z * height + y] = pixelData[z * sliceSize + y * width + x];
                     }
                 }
-                canvas.width = height;
-                canvas.height = dicomData.numSlices;
             }
 
-            const grayscale = applyWindowing(sliceData, windowSettings.center, windowSettings.width);
-            const imageData = ctx.createImageData(canvas.width, canvas.height);
-            for (let i = 0; i < grayscale.length; i++) {
+            canvas.width = canvasWidth;
+            canvas.height = canvasHeight;
+            
+            var grayscale = applyWindowing(sliceData, windowSettings.center, windowSettings.width);
+            var imageData = ctx.createImageData(canvasWidth, canvasHeight);
+            for (var i = 0; i < grayscale.length; i++) {
                 imageData.data[i * 4] = grayscale[i];
                 imageData.data[i * 4 + 1] = grayscale[i];
                 imageData.data[i * 4 + 2] = grayscale[i];
@@ -413,7 +505,7 @@
         }
 
         function applyPreset(preset) {
-            const presets = {
+            var presets = {
                 lung: { center: -600, width: 1500 },
                 bone: { center: 300, width: 1500 },
                 brain: { center: 40, width: 80 },
