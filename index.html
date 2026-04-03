@@ -163,7 +163,7 @@
             </div>
             <div class="view-content" id="axial-container">
                 <div class="drop-zone" id="drop-zone">
-                    <div class="drop-zone-icon">📁</div>
+                    <div class="drop-zone-icon">[+]</div>
                     <div class="drop-zone-text">Click or drag DICOM folder</div>
                     <div class="drop-zone-hint">Supports .dcm files</div>
                     <input type="file" id="file-input" webkitdirectory multiple style="display:none">
@@ -324,7 +324,7 @@
             document.getElementById('volume-hint').style.display = 'none';
             document.getElementById('patient-info').style.display = 'block';
             document.getElementById('dimensions').textContent = 
-                `${first.width} x ${first.height} x ${slices.length}`;
+                first.width + ' x ' + first.height + ' x ' + slices.length;
 
             renderAllViews();
         }
@@ -405,11 +405,11 @@
             );
 
             document.getElementById('axial-slice-info').textContent = 
-                `Slice: ${currentSlice.axial + 1}/${dicomData.numSlices}`;
+                'Slice: ' + (currentSlice.axial + 1) + '/' + dicomData.numSlices;
             document.getElementById('coronal-slice-info').textContent = 
-                `Slice: ${currentSlice.coronal + 1}/${dicomData.height}`;
+                'Slice: ' + (currentSlice.coronal + 1) + '/' + dicomData.height;
             document.getElementById('sagittal-slice-info').textContent = 
-                `Slice: ${currentSlice.sagittal + 1}/${dicomData.width}`;
+                'Slice: ' + (currentSlice.sagittal + 1) + '/' + dicomData.width;
         }
 
         function applyPreset(preset) {
@@ -419,7 +419,7 @@
                 brain: { center: 40, width: 80 },
                 abdomen: { center: 60, width: 400 }
             };
-            const p = presets[preset];
+            var p = presets[preset];
             windowSettings.center = p.center;
             windowSettings.width = p.width;
             document.getElementById('windowCenter').value = p.center;
@@ -433,15 +433,15 @@
             renderAllViews();
         }
 
-        document.querySelectorAll('.view-content').forEach((container, index) => {
-            const views = ['axial', 'coronal', 'sagittal'];
+        document.querySelectorAll('.view-content').forEach(function(container, index) {
+            var views = ['axial', 'coronal', 'sagittal'];
             if (index >= 3) return;
 
-            container.addEventListener('wheel', e => {
+            container.addEventListener('wheel', function(e) {
                 if (!dicomData) return;
                 e.preventDefault();
-                const delta = e.deltaY > 0 ? -1 : 1;
-                const max = index === 0 ? dicomData.numSlices : 
+                var delta = e.deltaY > 0 ? -1 : 1;
+                var max = index === 0 ? dicomData.numSlices : 
                            index === 1 ? dicomData.height : dicomData.width;
                 currentSlice[views[index]] = Math.max(0, 
                     Math.min(currentSlice[views[index]] + delta, max - 1));
