@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>3D CT 褰卞儚鏌ョ湅鍣?/title>
+    <title>3D CT 影像查看器</title>
     <style>
         :root {
             --bg-primary: #0d1117;
@@ -161,20 +161,20 @@
 </head>
 <body>
     <header class="header">
-        <h1>馃彞 3D CT 褰卞儚鏌ョ湅鍣?/h1>
+        <h1>🏥 3D CT 影像查看器</h1>
         <div class="toolbar">
             <div class="toolbar-group">
-                <button class="btn preset-btn" onclick="applyPreset('lung')">鑲虹獥</button>
-                <button class="btn preset-btn" onclick="applyPreset('bone')">楠ㄧ獥</button>
-                <button class="btn preset-btn" onclick="applyPreset('brain')">鑴戠獥</button>
-                <button class="btn preset-btn" onclick="applyPreset('abdomen')">鑵圭獥</button>
+                <button class="btn preset-btn" onclick="applyPreset('lung')">肺窗</button>
+                <button class="btn preset-btn" onclick="applyPreset('bone')">骨窗</button>
+                <button class="btn preset-btn" onclick="applyPreset('brain')">脑窗</button>
+                <button class="btn preset-btn" onclick="applyPreset('abdomen')">腹窗</button>
             </div>
             <div class="toolbar-group">
                 <label class="input-label">
-                    绐楀: <input type="number" id="windowWidth" value="400" onchange="updateWindow()">
+                    窗宽: <input type="number" id="windowWidth" value="400" onchange="updateWindow()">
                 </label>
                 <label class="input-label">
-                    绐椾綅: <input type="number" id="windowCenter" value="40" onchange="updateWindow()">
+                    窗位: <input type="number" id="windowCenter" value="40" onchange="updateWindow()">
                 </label>
             </div>
         </div>
@@ -183,14 +183,14 @@
     <main class="main-container">
         <div class="view-panel">
             <div class="view-header">
-                <span>杞翠綅 (Axial)</span>
-                <span id="axial-slice-info">灞? 0/0</span>
+                <span>轴位 (Axial)</span>
+                <span id="axial-slice-info">层: 0/0</span>
             </div>
             <div class="view-content" id="axial-container">
                 <div class="drop-zone" id="drop-zone">
-                    <div class="drop-zone-icon">馃搧</div>
-                    <div class="drop-zone-text">鐐瑰嚮閫夋嫨鎴栨嫋鏀?DICOM 鏂囦欢澶?/div>
-                    <div class="drop-zone-hint">鏀寔 .dcm 鏂囦欢鎴栧寘鍚?DICOM 鐨勬枃浠跺す</div>
+                    <div class="drop-zone-icon">📁</div>
+                    <div class="drop-zone-text">点击选择或拖放 DICOM 文件夹</div>
+                    <div class="drop-zone-hint">支持 .dcm 文件或包含 DICOM 的文件夹</div>
                     <input type="file" id="file-input" webkitdirectory multiple style="display:none">
                 </div>
                 <canvas id="axial-canvas" style="display:none"></canvas>
@@ -203,8 +203,8 @@
 
         <div class="view-panel">
             <div class="view-header">
-                <span>鍐犵姸浣?(Coronal)</span>
-                <span id="coronal-slice-info">灞? 0/0</span>
+                <span>冠状位 (Coronal)</span>
+                <span id="coronal-slice-info">层: 0/0</span>
             </div>
             <div class="view-content">
                 <canvas id="coronal-canvas" style="display:none"></canvas>
@@ -217,8 +217,8 @@
 
         <div class="view-panel">
             <div class="view-header">
-                <span>鐭㈢姸浣?(Sagittal)</span>
-                <span id="sagittal-slice-info">灞? 0/0</span>
+                <span>矢状位 (Sagittal)</span>
+                <span id="sagittal-slice-info">层: 0/0</span>
             </div>
             <div class="view-content">
                 <canvas id="sagittal-canvas" style="display:none"></canvas>
@@ -231,31 +231,32 @@
 
         <div class="view-panel">
             <div class="view-header">
-                <span>3D 瑙嗗浘 (Volume)</span>
+                <span>3D 视图 (Volume)</span>
             </div>
             <div class="view-content">
                 <canvas id="volume-canvas" style="display:none"></canvas>
                 <div id="volume-hint" style="color: var(--text-secondary); text-align: center;">
-                    <p>瀹屾暣 3D 浣撴覆鏌撻渶瑕?WebGL</p>
-                    <p>褰撳墠鏄剧ず锛氫腑闂村垏鐗囬瑙?/p>
+                    <p>完整 3D 体渲染需要 WebGL</p>
+                    <p>当前显示：中间切片预览</p>
                 </div>
             </div>
         </div>
     </main>
 
     <div class="patient-info" id="patient-info" style="display:none">
-        <div>鎮ｈ€? <span id="patient-name">鏈煡</span></div>
-        <div>ID: <span id="patient-id">鏈煡</span></div>
-        <div>灏哄: <span id="dimensions">-</span></div>
+        <div>患者: <span id="patient-name">未知</span></div>
+        <div>ID: <span id="patient-id">未知</span></div>
+        <div>尺寸: <span id="dimensions">-</span></div>
     </div>
 
     <script src="https://unpkg.com/dicom-parser@1.8.21/dist/dicomParser.min.js"></script>
     <script>
-        // 鍏ㄥ眬鐘舵€?        let dicomData = null;
+        // 全局状态
+        let dicomData = null;
         let currentSlice = { axial: 0, coronal: 0, sagittal: 0 };
         let windowSettings = { center: 40, width: 400 };
 
-        // 鏂囦欢閫夋嫨
+        // 文件选择
         const dropZone = document.getElementById('drop-zone');
         const fileInput = document.getElementById('file-input');
 
@@ -275,14 +276,14 @@
             );
 
             if (dicomFiles.length === 0) {
-                alert('鏈壘鍒?DICOM 鏂囦欢');
+                alert('未找到 DICOM 文件');
                 return;
             }
 
             try {
                 await loadDicomFiles(dicomFiles);
             } catch (err) {
-                alert('鍔犺浇澶辫触: ' + err.message);
+                alert('加载失败: ' + err.message);
             }
         }
 
@@ -317,16 +318,16 @@
                         sliceLocation: parseFloat(dataSet.string('x00201032')) || slices.length
                     });
                 } catch (e) {
-                    console.warn('璺宠繃鏂囦欢:', file.name, e);
+                    console.warn('跳过文件:', file.name, e);
                 }
             }
 
-            if (slices.length === 0) throw new Error('鏈兘瑙ｆ瀽浠讳綍鏈夋晥鐨?DICOM 鏁版嵁');
+            if (slices.length === 0) throw new Error('未能解析任何有效的 DICOM 数据');
 
-            // 鎺掑簭
+            // 排序
             slices.sort((a, b) => a.sliceLocation - b.sliceLocation);
 
-            // 鍚堝苟鏁版嵁
+            // 合并数据
             const first = slices[0];
             const allPixels = new Int16Array(slices.length * first.width * first.height);
             slices.forEach((s, i) => {
@@ -344,7 +345,7 @@
             currentSlice.coronal = Math.floor(first.height / 2);
             currentSlice.sagittal = Math.floor(first.width / 2);
 
-            // 鏄剧ず鐢诲竷
+            // 显示画布
             document.getElementById('drop-zone').style.display = 'none';
             document.getElementById('axial-canvas').style.display = 'block';
             document.getElementById('coronal-canvas').style.display = 'block';
@@ -353,7 +354,7 @@
             document.getElementById('volume-hint').style.display = 'none';
             document.getElementById('patient-info').style.display = 'block';
             document.getElementById('dimensions').textContent = 
-                `${first.width} 脳 ${first.height} 脳 ${slices.length}`;
+                `${first.width} × ${first.height} × ${slices.length}`;
 
             renderAllViews();
         }
@@ -433,13 +434,13 @@
                 currentSlice.sagittal, 'sagittal'
             );
 
-            // 鏇存柊淇℃伅
+            // 更新信息
             document.getElementById('axial-slice-info').textContent = 
-                `灞? ${currentSlice.axial + 1}/${dicomData.numSlices}`;
+                `层: ${currentSlice.axial + 1}/${dicomData.numSlices}`;
             document.getElementById('coronal-slice-info').textContent = 
-                `灞? ${currentSlice.coronal + 1}/${dicomData.height}`;
+                `层: ${currentSlice.coronal + 1}/${dicomData.height}`;
             document.getElementById('sagittal-slice-info').textContent = 
-                `灞? ${currentSlice.sagittal + 1}/${dicomData.width}`;
+                `层: ${currentSlice.sagittal + 1}/${dicomData.width}`;
         }
 
         function applyPreset(preset) {
@@ -463,7 +464,7 @@
             renderAllViews();
         }
 
-        // 婊氳疆缈诲眰
+        // 滚轮翻层
         document.querySelectorAll('.view-content').forEach((container, index) => {
             const views = ['axial', 'coronal', 'sagittal'];
             if (index >= 3) return;
