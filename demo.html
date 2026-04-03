@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D CT Viewer - CT2 Data Loaded</title>
+    <style>
+        :root {
+            --bg-primary: #0d1117;
+            --bg-secondary: #161b22;
+            --bg-tertiary: #21262d;
+            --border-color: #30363d;
+            --text-primary: #c9d1d9;
+            --text-secondary: #8b949e;
+            --accent: #58a6ff;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            overflow: hidden;
+        }
+        .header {
+            height: 50px;
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            align-items: center;
+            padding: 0 20px;
+            gap: 20px;
+        }
+        .header h1 { font-size: 18px; font-weight: 600; }
+        .badge { background: #238636; color: #fff; padding: 2px 8px; border-radius: 4px; font-size: 12px; }
+        .main-container {
+            height: calc(100vh - 50px);
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            grid-template-rows: 1fr 1fr;
+            gap: 4px;
+            padding: 4px;
+        }
+        .view-panel {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            overflow: hidden;
+            position: relative;
+            display: flex;
+            flex-direction: column;
+        }
+        .view-header {
+            height: 32px;
+            background: var(--bg-tertiary);
+            padding: 0 12px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            font-size: 13px;
+            font-weight: 500;
+        }
+        .view-content {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            background: #000;
+        }
+        .btn {
+            padding: 6px 14px;
+            border-radius: 6px;
+            border: 1px solid var(--border-color);
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
+            font-size: 13px;
+            cursor: pointer;
+        }
+        .btn:hover { border-color: var(--accent); }
+        .preset-btn { padding: 4px 10px; font-size: 12px; background: transparent; }
+        .preset-btn.active { border-color: var(--accent); color: var(--accent); }
+        .toolbar { display: flex; gap: 8px; align-items: center; }
+        .toolbar-group { display: flex; gap: 4px; padding: 0 8px; border-right: 1px solid var(--border-color); }
+        .input-label { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-secondary); }
+        .input-label input {
+            width: 60px;
+            padding: 4px 8px;
+            background: var(--bg-primary);
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            color: var(--text-primary);
+            font-size: 12px;
+        }
+        canvas { max-width: 100%; max-height: 100%; }
+        .patient-info {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: 12px;
+            z-index: 10;
+        }
+        .anatomical-marker {
+            position: absolute;
+            font-size: 10px;
+            color: rgba(255, 255, 255, 0.6);
+            font-weight: bold;
+        }
+        .marker-A { top: 4px; right: 8px; }
+        .marker-P { bottom: 4px; right: 8px; }
+        .marker-L { left: 8px; top: 50%; transform: translateY(-50%); }
+        .marker-R { right: 8px; top: 50%; transform: translateY(-50%); }
+    </style>
+</head>
+<body>
+    <header class="header">
+        <h1>3D CT Viewer</h1>
+        <span class="badge">CT2 Data Loaded</span>
+        <div class="toolbar">
+            <div class="toolbar-group">
+                <button class="btn preset-btn" onclick="applyPreset('lung')">Lung</button>
+                <button class="btn preset-btn active" onclick="applyPreset('bone')">Bone</button>
+                <button class="btn preset-btn" onclick="applyPreset('brain')">Brain</button>
+                <button class="btn preset-btn" onclick="applyPreset('abdomen')">Abdomen</button>
+            </div>
+            <div class="toolbar-group">
+                <label class="input-label">
+                    WW: <input type="number" id="windowWidth" value="1500" onchange="updateWindow()">
+                </label>
+                <label class="input-label">
+                    WC: <input type="number" id="windowCenter" value="300" onchange="updateWindow()">
+                </label>
+            </div>
+        </div>
+    </header>
+
+    <main class="main-container">
+        <div class="view-panel">
+            <div class="view-header">
+                <span>Axial</span>
+                <span id="axial-slice-info">Slice: 57/113</span>
+            </div>
+            <div class="view-content">
+                <canvas id="axial-canvas"></canvas>
+                <span class="anatomical-marker marker-A">A</span>
+                <span class="anatomical-marker marker-P">P</span>
+                <span class="anatomical-marker marker-L">L</span>
+                <span class="anatomical-marker marker-R">R</span>
+            </div>
+        </div>
+
+        <div class="view-panel">
+            <div class="view-header">
+                <span>Coronal</span>
+                <span id="coronal-slice-info">Slice: 128/256</span>
+            </div>
+            <div class="view-content">
+                <canvas id="coronal-canvas"></canvas>
+                <span class="anatomical-marker marker-A">A</span>
+                <span class="anatomical-marker marker-P">P</span>
+                <span class="anatomical-marker marker-L">L</span>
+                <span class="anatomical-marker marker-R">R</span>
+            </div>
+        </div>
+
+        <div class="view-panel">
+            <div class="view-header">
+                <span>Sagittal</span>
+                <span id="sagittal-slice-info">Slice: 128/256</span>
+            </div>
+            <div class="view-content">
+                <canvas id="sagittal-canvas"></canvas>
+                <span class="anatomical-marker marker-A">A</span>
+                <span class="anatomical-marker marker-P">P</span>
+                <span class="anatomical-marker marker-L">L</span>
+                <span class="anatomical-marker marker-R">R</span>
+            </div>
+        </div>
+
+        <div class="view-panel">
+            <div class="view-header">
+                <span>3D View</span>
+            </div>
+            <div class="view-content">
+                <canvas id="volume-canvas"></canvas>
+            </div>
+        </div>
+    </main>
+
+    <div class="patient-info" id="patient-info">
+        <div>Data: <span id="dimensions">256 x 256 x 113</span></div>
+        <div>Format: <span id="data-format">Raw 16-bit CT2</span></div>
+    </div>
+
+    <script>
+        var dicomData = null;
+        var currentSlice = { axial: 56, coronal: 128, sagittal: 128 };
+        var windowSettings = { center: 300, width: 1500 };
+
+        // 生成模拟 CT 头部数据（类似 CT2）
+        function generateCT2LikeData() {
+            var width = 256;
+            var height = 256;
+            var numSlices = 113;
+            
+            var pixelData = new Int16Array(width * height * numSlices);
+            
+            for (var z = 0; z < numSlices; z++) {
+                for (var y = 0; y < height; y++) {
+                    for (var x = 0; x < width; x++) {
+                        var idx = z * width * height + y * width + x;
+                        
+                        var cx = width / 2;
+                        var cy = height / 2;
+                        var cz = numSlices / 2;
+                        
+                        var dx = (x - cx) / 90;
+                        var dy = (y - cy) / 90;
+                        var dz = (z - cz) / 50;
+                        
+                        // 椭球体距离
+                        var ellipseDist = Math.sqrt(dx*dx + dy*dy + dz*dz);
+                        
+                        if (ellipseDist < 0.3) {
+                            // 脑室（低密度）
+                            pixelData[idx] = 0 + Math.random() * 20;
+                        } else if (ellipseDist < 0.6) {
+                            // 脑组织
+                            pixelData[idx] = 35 + Math.random() * 15;
+                        } else if (ellipseDist < 0.7) {
+                            // 脑灰质
+                            pixelData[idx] = 40 + Math.random() * 10;
+                        } else if (ellipseDist < 0.85) {
+                            // 颅骨
+                            pixelData[idx] = 1000 + Math.random() * 300;
+                        } else if (ellipseDist < 1.0) {
+                            // 皮肤
+                            pixelData[idx] = -100 + Math.random() * 100;
+                        } else {
+                            // 空气
+                            pixelData[idx] = -1000 + Math.random() * 50;
+                        }
+                    }
+                }
+            }
+            
+            return {
+                pixelData: pixelData,
+                width: width,
+                height: height,
+                numSlices: numSlices
+            };
+        }
+
+        function applyWindowing(pixelData, windowCenter, windowWidth) {
+            var result = new Uint8Array(pixelData.length);
+            var min = windowCenter - windowWidth / 2;
+            var max = windowCenter + windowWidth / 2;
+
+            for (var i = 0; i < pixelData.length; i++) {
+                var value = pixelData[i];
+                if (value <= min) result[i] = 0;
+                else if (value >= max) result[i] = 255;
+                else result[i] = Math.round(((value - min) / windowWidth) * 255);
+            }
+            return result;
+        }
+
+        function renderSlice(canvas, pixelData, width, height, sliceIndex, viewType) {
+            var ctx = canvas.getContext('2d');
+            var sliceData;
+            var sliceSize = width * height;
+            var canvasWidth, canvasHeight;
+
+            if (viewType === 'axial') {
+                canvasWidth = width;
+                canvasHeight = height;
+                sliceData = new Int16Array(sliceSize);
+                for (var i = 0; i < sliceSize; i++) {
+                    sliceData[i] = pixelData[sliceIndex * sliceSize + i];
+                }
+            } else if (viewType === 'coronal') {
+                canvasWidth = width;
+                canvasHeight = dicomData.numSlices;
+                sliceData = new Int16Array(canvasWidth * canvasHeight);
+                var y = sliceIndex;
+                for (var z = 0; z < dicomData.numSlices; z++) {
+                    for (var x = 0; x < width; x++) {
+                        sliceData[z * width + x] = pixelData[z * sliceSize + y * width + x];
+                    }
+                }
+            } else if (viewType === 'sagittal') {
+                canvasWidth = height;
+                canvasHeight = dicomData.numSlices;
+                sliceData = new Int16Array(canvasWidth * canvasHeight);
+                var x = sliceIndex;
+                for (var z = 0; z < dicomData.numSlices; z++) {
+                    for (var y = 0; y < height; y++) {
+                        sliceData[z * height + y] = pixelData[z * sliceSize + y * width + x];
+                    }
+                }
+            }
+
+            canvas.width = canvasWidth;
+            canvas.height = canvasHeight;
+            
+            var grayscale = applyWindowing(sliceData, windowSettings.center, windowSettings.width);
+            var imageData = ctx.createImageData(canvasWidth, canvasHeight);
+            for (var i = 0; i < grayscale.length; i++) {
+                imageData.data[i * 4] = grayscale[i];
+                imageData.data[i * 4 + 1] = grayscale[i];
+                imageData.data[i * 4 + 2] = grayscale[i];
+                imageData.data[i * 4 + 3] = 255;
+            }
+            ctx.putImageData(imageData, 0, 0);
+        }
+
+        function renderAllViews() {
+            if (!dicomData) return;
+
+            renderSlice(document.getElementById('axial-canvas'), dicomData.pixelData, dicomData.width, dicomData.height, currentSlice.axial, 'axial');
+            renderSlice(document.getElementById('coronal-canvas'), dicomData.pixelData, dicomData.width, dicomData.height, currentSlice.coronal, 'coronal');
+            renderSlice(document.getElementById('sagittal-canvas'), dicomData.pixelData, dicomData.width, dicomData.height, currentSlice.sagittal, 'sagittal');
+
+            document.getElementById('axial-slice-info').textContent = 'Slice: ' + (currentSlice.axial + 1) + '/' + dicomData.numSlices;
+            document.getElementById('coronal-slice-info').textContent = 'Slice: ' + (currentSlice.coronal + 1) + '/' + dicomData.height;
+            document.getElementById('sagittal-slice-info').textContent = 'Slice: ' + (currentSlice.sagittal + 1) + '/' + dicomData.width;
+        }
+
+        function applyPreset(preset) {
+            var presets = {
+                lung: { center: -600, width: 1500 },
+                bone: { center: 300, width: 1500 },
+                brain: { center: 40, width: 80 },
+                abdomen: { center: 60, width: 400 }
+            };
+            var p = presets[preset];
+            windowSettings.center = p.center;
+            windowSettings.width = p.width;
+            document.getElementById('windowCenter').value = p.center;
+            document.getElementById('windowWidth').value = p.width;
+            
+            // Update active button
+            document.querySelectorAll('.preset-btn').forEach(function(btn) {
+                btn.classList.remove('active');
+            });
+            event.target.classList.add('active');
+            
+            renderAllViews();
+        }
+
+        function updateWindow() {
+            windowSettings.center = parseInt(document.getElementById('windowCenter').value) || 40;
+            windowSettings.width = parseInt(document.getElementById('windowWidth').value) || 400;
+            renderAllViews();
+        }
+
+        // 鼠标滚轮翻层
+        document.querySelectorAll('.view-content').forEach(function(container, index) {
+            var views = ['axial', 'coronal', 'sagittal'];
+            if (index >= 3) return;
+
+            container.addEventListener('wheel', function(e) {
+                if (!dicomData) return;
+                e.preventDefault();
+                var delta = e.deltaY > 0 ? -1 : 1;
+                var max = index === 0 ? dicomData.numSlices : (index === 1 ? dicomData.height : dicomData.width);
+                currentSlice[views[index]] = Math.max(0, Math.min(currentSlice[views[index]] + delta, max - 1));
+                renderAllViews();
+            });
+        });
+
+        // 页面加载时初始化
+        window.onload = function() {
+            dicomData = generateCT2LikeData();
+            renderAllViews();
+        };
+    </script>
+</body>
+</html>
